@@ -28,10 +28,18 @@ public class EventService {
     }
 
     public void collectSensorEvent(SensorEvent event) {
-        sensorEventHandlers.get(event.getType()).handle(event);
+        SensorEventHandler handler = sensorEventHandlers.get(event.getType());
+        if (handler == null) {
+            throw new IllegalArgumentException("Не найден обработчик для сенсора типа: " + event.getType());
+        }
+        handler.handle(event);
     }
 
     public void collectHubEvent(HubEvent event) {
-        hubEventHandlers.get(event.getType()).handle(event);
+        HubEventHandler handler = hubEventHandlers.get(event.getType());
+        if (handler == null) {
+            throw new IllegalArgumentException("Не найден обработчик для события хаба типа: " + event.getType());
+        }
+        handler.handle(event);
     }
 }

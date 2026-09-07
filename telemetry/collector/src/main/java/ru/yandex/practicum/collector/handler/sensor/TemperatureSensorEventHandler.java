@@ -24,9 +24,6 @@ public class TemperatureSensorEventHandler implements SensorEventHandler {
     public void handle(SensorEvent event) {
         TemperatureSensorEvent sensorEvent = (TemperatureSensorEvent) event;
         TemperatureSensorAvro payload = TemperatureSensorAvro.newBuilder()
-                .setId(sensorEvent.getId())
-                .setHubId(sensorEvent.getHubId())
-                .setTimestamp(sensorEvent.getTimestamp())
                 .setTemperatureC(sensorEvent.getTemperatureC())
                 .setTemperatureF(sensorEvent.getTemperatureF())
                 .build();
