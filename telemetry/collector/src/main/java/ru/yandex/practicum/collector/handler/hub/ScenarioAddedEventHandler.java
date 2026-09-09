@@ -48,7 +48,7 @@ public class ScenarioAddedEventHandler implements HubEventHandler {
                 .setTimestamp(hubEvent.getTimestamp())
                 .setPayload(payload)
                 .build();
-        producer.send(hubEventAvro);
+        producer.send(hubEventAvro, KafkaEventProducer.HUBS_EVENTS_TOPIC);
     }
 
     private ScenarioConditionAvro toAvroCondition(ScenarioCondition condition) {

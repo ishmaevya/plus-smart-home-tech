@@ -32,6 +32,6 @@ public class SwitchSensorEventHandler implements SensorEventHandler {
                 .setTimestamp(sensorEvent.getTimestamp())
                 .setPayload(payload)
                 .build();
-        producer.send(sensorEventAvro);
+        producer.send(sensorEventAvro, KafkaEventProducer.SENSOR_EVENTS_TOPIC);
     }
 }

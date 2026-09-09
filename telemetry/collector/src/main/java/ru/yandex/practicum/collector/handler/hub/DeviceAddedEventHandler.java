@@ -33,6 +33,6 @@ public class DeviceAddedEventHandler implements HubEventHandler {
                 .setTimestamp(hubEvent.getTimestamp())
                 .setPayload(payload)
                 .build();
-        producer.send(hubEventAvro);
+        producer.send(hubEventAvro, KafkaEventProducer.HUBS_EVENTS_TOPIC);
     }
 }

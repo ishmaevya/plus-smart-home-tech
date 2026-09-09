@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import ru.yandex.practicum.kafka.telemetry.event.HubEventAvro;
 import ru.yandex.practicum.kafka.telemetry.event.SensorEventAvro;
 
+import java.time.Instant;
 import java.util.concurrent.ExecutionException;
 
 @Slf4j
@@ -17,17 +18,17 @@ import java.util.concurrent.ExecutionException;
 @RequiredArgsConstructor
 public class KafkaEventProducer {
 
-    private static final String SENSOR_EVENTS_TOPIC = "telemetry.sensors.v1";
-    private static final String HUBS_EVENTS_TOPIC = "telemetry.hubs.v1";
+    public static final String SENSOR_EVENTS_TOPIC = "telemetry.sensors.v1";
+    public static final String HUBS_EVENTS_TOPIC = "telemetry.hubs.v1";
 
     private final KafkaTemplate<String, SpecificRecordBase> kafkaTemplate;
 
-    public void send(SensorEventAvro event) {
+    public void send(SpecificRecordBase event, String topic) {
         ProducerRecord<String, SpecificRecordBase> record = new ProducerRecord<>(
-                SENSOR_EVENTS_TOPIC,
+                topic,
                 null,
-                event.getTimestamp().toEpochMilli(),
-                event.getHubId(),
+                resolveTimestamp(event).toEpochMilli(),
+                resolveHubId(event),
                 event
         );
         SendResult<String, SpecificRecordBase> result = sendAndGetResult(record);
@@ -36,18 +37,24 @@ public class KafkaEventProducer {
                 result.getRecordMetadata().partition(), result.getRecordMetadata().offset());
     }
 
-    public void send(HubEventAvro event) {
-        ProducerRecord<String, SpecificRecordBase> record = new ProducerRecord<>(
-                HUBS_EVENTS_TOPIC,
-                null,
-                event.getTimestamp().toEpochMilli(),
-                event.getHubId(),
-                event
-        );
-        SendResult<String, SpecificRecordBase> result = sendAndGetResult(record);
-        log.info("Событие {} успешно сохранено в топик {} в партицию {} со смещением {}",
-                event.getClass().getSimpleName(), result.getRecordMetadata().topic(),
-                result.getRecordMetadata().partition(), result.getRecordMetadata().offset());
+    private String resolveHubId(SpecificRecordBase event) {
+        if (event instanceof SensorEventAvro sensorEvent) {
+            return sensorEvent.getHubId();
+        }
+        if (event instanceof HubEventAvro hubEvent) {
+            return hubEvent.getHubId();
+        }
+        throw new IllegalArgumentException("Неизвестный тип события: " + event.getClass().getSimpleName());
+    }
+
+    private Instant resolveTimestamp(SpecificRecordBase event) {
+        if (event instanceof SensorEventAvro sensorEvent) {
+            return sensorEvent.getTimestamp();
+        }
+        if (event instanceof HubEventAvro hubEvent) {
+            return hubEvent.getTimestamp();
+        }
+        throw new IllegalArgumentException("Неизвестный тип события: " + event.getClass().getSimpleName());
     }
 
     private SendResult<String, SpecificRecordBase> sendAndGetResult(ProducerRecord<String, SpecificRecordBase> record) {
