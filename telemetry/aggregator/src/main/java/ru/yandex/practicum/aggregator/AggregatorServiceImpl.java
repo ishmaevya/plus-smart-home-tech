@@ -4,6 +4,7 @@ import org.apache.avro.specific.SpecificRecordBase;
 import org.springframework.stereotype.Service;
 import ru.yandex.practicum.kafka.telemetry.event.*;
 
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -27,16 +28,32 @@ public class AggregatorServiceImpl {
                 .setData(extractData(event))
                 .build();
 
+        if (!isUpdateNeeded(snapshot.getSensorsState(), event, sensorState)) {
+            return Optional.empty();
+        }
+
         Map<String, SensorStateAvro> updatedSensorsState = new HashMap<>(snapshot.getSensorsState());
         updatedSensorsState.put(event.getId(), sensorState);
 
         SensorsSnapshotAvro updatedSnapshot = SensorsSnapshotAvro.newBuilder(snapshot)
                 .setSensorsState(updatedSensorsState)
-                .setTimestamp(event.getTimestamp())
+                .setTimestamp(sensorState.getTimestamp())
                 .build();
 
         hubs.put(hubId, updatedSnapshot);
         return Optional.of(updatedSnapshot);
+    }
+
+    private boolean isUpdateNeeded(Map<String, SensorStateAvro> sensorsState, SensorEventAvro event,
+                                   SensorStateAvro sensorState) {
+        SensorStateAvro existing = sensorsState.get(event.getId());
+        if (existing == null) {
+            return true;
+        }
+        if (existing.getData().equals(sensorState.getData())) {
+            return false;
+        }
+        return !existing.getTimestamp().truncatedTo(ChronoUnit.MILLIS).isAfter(event.getTimestamp());
     }
 
     private SpecificRecordBase extractData(SensorEventAvro event) {
