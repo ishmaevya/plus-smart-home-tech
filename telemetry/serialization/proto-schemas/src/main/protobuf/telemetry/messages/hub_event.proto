@@ -56,10 +56,8 @@ message ScenarioConditionProto {
   string sensor_id = 1;
   ConditionTypeProto type = 2;
   ConditionOperationProto operation = 3;
-  oneof value {
-    bool bool_value = 4;
-    int32 int_value = 5;
-  }
+  optional bool bool_value = 4;
+  optional int32 int_value = 5;
 }
 
 enum ActionTypeProto {
@@ -83,4 +81,11 @@ message ScenarioAddedEventProto {
 
 message ScenarioRemovedEventProto {
   string name = 1; // название сценария уникальное в рамках хаба
+}
+
+message DeviceActionRequest {
+  string hub_id = 1;          // идентификатор хаба
+  string scenario_name = 2;   // название сценария
+  DeviceActionProto action = 3; // действие, которое нужно выполнить
+  google.protobuf.Timestamp timestamp = 4; // таймстемп события
 }
