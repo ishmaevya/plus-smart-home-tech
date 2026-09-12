@@ -68,17 +68,13 @@ public final class HubEventMapper {
     }
 
     private static Integer resolveValue(ScenarioConditionProto proto) {
-        switch (proto.getValueCase()) {
-            case BOOL_VALUE -> {
-                return proto.getBoolValue() ? 1 : 0;
-            }
-            case INT_VALUE -> {
-                return proto.getIntValue();
-            }
-            default -> {
-                return null;
-            }
+        if (proto.hasBoolValue()) {
+            return proto.getBoolValue() ? 1 : 0;
         }
+        if (proto.hasIntValue()) {
+            return proto.getIntValue();
+        }
+        return null;
     }
 
     private static DeviceAction toDeviceAction(DeviceActionProto proto) {
