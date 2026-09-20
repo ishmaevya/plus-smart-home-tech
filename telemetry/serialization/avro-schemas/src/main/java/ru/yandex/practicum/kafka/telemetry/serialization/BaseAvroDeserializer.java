@@ -1,4 +1,4 @@
-package ru.yandex.practicum.aggregator.deserializer;
+package ru.yandex.practicum.kafka.telemetry.serialization;
 
 import org.apache.avro.Schema;
 import org.apache.avro.io.DatumReader;

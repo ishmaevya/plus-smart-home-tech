@@ -30,8 +30,15 @@ public class SnapshotProcessor {
         try {
             while (true) {
                 ConsumerRecords<String, SensorsSnapshotAvro> records = consumer.poll(Duration.ofMillis(100));
+                if (records.isEmpty()) {
+                    continue;
+                }
                 for (ConsumerRecord<String, SensorsSnapshotAvro> record : records) {
-                    analyzerService.analyze(record.value());
+                    try {
+                        analyzerService.analyze(record.value());
+                    } catch (Exception e) {
+                        log.error("Ошибка обработки снапшота {}: {}", record.value(), e.getMessage(), e);
+                    }
                 }
                 consumer.commitSync();
             }
