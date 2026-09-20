@@ -35,8 +35,15 @@ public class HubEventProcessor implements Runnable {
         try {
             while (true) {
                 ConsumerRecords<String, HubEventAvro> records = consumer.poll(Duration.ofMillis(100));
+                if (records.isEmpty()) {
+                    continue;
+                }
                 for (ConsumerRecord<String, HubEventAvro> record : records) {
-                    handleEvent(record.value());
+                    try {
+                        handleEvent(record.value());
+                    } catch (Exception e) {
+                        log.error("Ошибка обработки события хабов {}: {}", record.value(), e.getMessage(), e);
+                    }
                 }
                 consumer.commitSync();
             }

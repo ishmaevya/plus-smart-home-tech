@@ -38,10 +38,17 @@ public class AggregationStarter {
         try {
             while (true) {
                 ConsumerRecords<String, SensorEventAvro> records = consumer.poll(Duration.ofMillis(100));
+                if (records.isEmpty()) {
+                    continue;
+                }
                 for (ConsumerRecord<String, SensorEventAvro> record : records) {
-                    aggregatorService.updateState(record.value())
-                            .ifPresent(snapshot -> producer.send(
-                                    new ProducerRecord<>(topicOut, snapshot.getHubId(), snapshot)));
+                    try {
+                        aggregatorService.updateState(record.value())
+                                .ifPresent(snapshot -> producer.send(
+                                        new ProducerRecord<>(topicOut, snapshot.getHubId(), snapshot)));
+                    } catch (Exception e) {
+                        log.error("Ошибка обработки события {}: {}", record.value(), e.getMessage(), e);
+                    }
                 }
                 producer.flush();
                 consumer.commitSync();
@@ -49,8 +56,6 @@ public class AggregationStarter {
         } catch (WakeupException e) {
             log.info("Получен WakeupException — завершаю poll-loop");
         } finally {
-            producer.flush();
-            consumer.commitSync();
             producer.close();
             consumer.close();
             log.info("Aggregator остановлен");
