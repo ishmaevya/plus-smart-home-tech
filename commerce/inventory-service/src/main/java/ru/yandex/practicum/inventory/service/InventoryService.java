@@ -8,6 +8,7 @@ import ru.yandex.practicum.inventory.dto.ReserveResponse;
 import ru.yandex.practicum.inventory.dto.UpdateInventoryRequest;
 import ru.yandex.practicum.inventory.entity.Inventory;
 import ru.yandex.practicum.inventory.exception.InsufficientStockException;
+import ru.yandex.practicum.inventory.exception.InventoryAlreadyExistsException;
 import ru.yandex.practicum.inventory.exception.NotFoundException;
 import ru.yandex.practicum.inventory.repository.InventoryRepository;
 
@@ -38,6 +39,11 @@ public class InventoryService {
 
     @Transactional
     public InventoryDto create(UpdateInventoryRequest request) {
+        if (inventoryRepository.findByProductId(request.productId()).isPresent()) {
+            throw new InventoryAlreadyExistsException(
+                    "Запись об остатках для товара " + request.productId() + " уже существует");
+        }
+
         Inventory inventory = new Inventory();
         inventory.setProductId(request.productId());
         inventory.setQuantity(request.quantity());

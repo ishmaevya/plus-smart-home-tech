@@ -2,6 +2,7 @@ package ru.yandex.practicum.inventory.exception;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -29,6 +30,26 @@ public class GlobalExceptionHandler {
     public ErrorResponse handleInsufficientStock(InsufficientStockException e) {
         log.warn("Недостаточно товара: {}", e.getMessage());
         return new ErrorResponse(HttpStatus.CONFLICT.value(), e.getMessage());
+    }
+
+    @ExceptionHandler(InventoryAlreadyExistsException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ErrorResponse handleAlreadyExists(InventoryAlreadyExistsException e) {
+        log.warn("Запись уже существует: {}", e.getMessage());
+        return new ErrorResponse(HttpStatus.CONFLICT.value(), e.getMessage());
+    }
+
+    /**
+     * Нарушение ограничения целостности на уровне БД: скорее всего, это гонка двух
+     * параллельных созданий записи по одному productId — предварительная проверка
+     * в сервисе такие случаи пропускает.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ErrorResponse handleDataIntegrityViolation(DataIntegrityViolationException e) {
+        log.warn("Нарушение ограничения целостности данных: {}", e.getMessage());
+        return new ErrorResponse(HttpStatus.CONFLICT.value(),
+                "Запись с такими данными уже существует");
     }
 
     /**
