@@ -105,6 +105,21 @@ class InventoryServiceAcceptanceTest {
     }
 
     @Test
+    void shouldReturnConflictWhenInventoryForProductAlreadyExists() throws Exception {
+        long productId = 100_003L;
+        postJson("/api/inventory", new UpdateInventoryRequest(productId, 10));
+
+        MvcResult response = postJson("/api/inventory", new UpdateInventoryRequest(productId, 20));
+
+        assertThat(status(response))
+                .as("Повторное создание записи об остатках для того же productId должно возвращать HTTP 409 Conflict")
+                .isEqualTo(409);
+        assertThat(readMap(response))
+                .as("Ответ ошибки должен содержать понятное сообщение")
+                .containsKey("message");
+    }
+
+    @Test
     void shouldReturnBadRequestForInvalidInventoryPayload() throws Exception {
         MvcResult response = postJson("/api/inventory", new UpdateInventoryRequest(null, -1));
 
