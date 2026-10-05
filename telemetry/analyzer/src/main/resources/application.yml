@@ -1,0 +1,34 @@
+spring:
+  kafka:
+    bootstrap-servers: localhost:9092
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/telemetry_analyzer
+    username: ${POSTGRES_USER:dbuser}
+    password: ${POSTGRES_PASSWORD:12345}
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+
+  sql:
+    init:
+      mode: always
+
+grpc:
+  client:
+    hub-router:
+      address: 'static://localhost:59090'
+      enableKeepAlive: true
+      keepAliveWithoutCalls: true
+      negotiationType: plaintext
+
+analyzer:
+  kafka:
+    snapshots-topic: telemetry.snapshots.v1
+    hub-events-topic: telemetry.hubs.v1
+    snapshots-group: telemetry.analyzer.snapshots
+    hub-events-group: telemetry.analyzer.hub-events
+    auto-offset-reset: earliest
+    enable-auto-commit: false
