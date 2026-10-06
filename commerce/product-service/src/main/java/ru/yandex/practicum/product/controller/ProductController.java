@@ -1,6 +1,7 @@
 package ru.yandex.practicum.product.controller;
 
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import ru.yandex.practicum.product.dto.CreateProductRequest;
@@ -10,15 +11,12 @@ import ru.yandex.practicum.product.service.ProductService;
 
 import java.util.List;
 
+@RequiredArgsConstructor
 @RestController
 @RequestMapping("/api/products")
 public class ProductController {
 
     private final ProductService productService;
-
-    public ProductController(ProductService productService) {
-        this.productService = productService;
-    }
 
     @GetMapping
     public List<ProductDto> getAllProducts() {
@@ -47,7 +45,7 @@ public class ProductController {
     }
 
     @PatchMapping("/{id}")
-    public ProductDto updateProduct(@PathVariable Long id, @RequestBody UpdateProductRequest request) {
+    public ProductDto updateProduct(@PathVariable Long id, @RequestBody @Valid UpdateProductRequest request) {
         return productService.update(id, request);
     }
 }

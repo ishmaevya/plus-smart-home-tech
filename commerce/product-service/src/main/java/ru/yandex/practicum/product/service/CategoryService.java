@@ -1,5 +1,6 @@
 package ru.yandex.practicum.product.service;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.yandex.practicum.product.dto.CategoryDto;
@@ -11,15 +12,12 @@ import ru.yandex.practicum.product.repository.CategoryRepository;
 import java.util.List;
 import java.util.stream.Collectors;
 
+@RequiredArgsConstructor
 @Service
 @Transactional(readOnly = true)
 public class CategoryService {
 
     private final CategoryRepository categoryRepository;
-
-    public CategoryService(CategoryRepository categoryRepository) {
-        this.categoryRepository = categoryRepository;
-    }
 
     public List<CategoryDto> findAll() {
         return categoryRepository.findAll().stream()

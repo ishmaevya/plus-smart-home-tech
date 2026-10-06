@@ -1,5 +1,6 @@
 package ru.yandex.practicum.inventory.service;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.yandex.practicum.inventory.dto.InventoryDto;
@@ -17,13 +18,10 @@ import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)
+@RequiredArgsConstructor
 public class InventoryService {
 
     private final InventoryRepository inventoryRepository;
-
-    public InventoryService(InventoryRepository inventoryRepository) {
-        this.inventoryRepository = inventoryRepository;
-    }
 
     public List<InventoryDto> findAll() {
         return inventoryRepository.findAll().stream()
