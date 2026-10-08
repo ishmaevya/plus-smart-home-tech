@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import ru.yandex.practicum.inventory.dto.InventoryDto;
+import ru.yandex.practicum.inventory.dto.ReleaseRequest;
 import ru.yandex.practicum.inventory.dto.ReserveRequest;
 import ru.yandex.practicum.inventory.dto.ReserveResponse;
 import ru.yandex.practicum.inventory.dto.UpdateInventoryRequest;
@@ -43,5 +44,10 @@ public class InventoryController {
     @PostMapping("/reserve")
     public ReserveResponse reserveStock(@RequestBody @Valid ReserveRequest request) {
         return inventoryService.reserve(request);
+    }
+
+    @PostMapping("/release")
+    public ReserveResponse releaseStock(@RequestBody @Valid ReleaseRequest request) {
+        return inventoryService.release(request);
     }
 }

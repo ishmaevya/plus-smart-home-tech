@@ -4,10 +4,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.yandex.practicum.inventory.dto.InventoryDto;
+import ru.yandex.practicum.inventory.dto.ReleaseRequest;
 import ru.yandex.practicum.inventory.dto.ReserveRequest;
 import ru.yandex.practicum.inventory.dto.ReserveResponse;
 import ru.yandex.practicum.inventory.dto.UpdateInventoryRequest;
 import ru.yandex.practicum.inventory.entity.Inventory;
+import ru.yandex.practicum.inventory.exception.InsufficientReservationException;
 import ru.yandex.practicum.inventory.exception.InsufficientStockException;
 import ru.yandex.practicum.inventory.exception.InventoryAlreadyExistsException;
 import ru.yandex.practicum.inventory.exception.NotFoundException;
@@ -72,6 +74,21 @@ public class InventoryService {
         Inventory saved = inventoryRepository.save(inventory);
         int available = (saved.getQuantity() == null ? 0 : saved.getQuantity()) - (saved.getReservedQuantity() == null ? 0 : saved.getReservedQuantity());
         return new ReserveResponse(true, available, "Товар успешно зарезервирован");
+    }
+
+    @Transactional
+    public ReserveResponse release(ReleaseRequest request) {
+        Inventory inventory = inventoryRepository.findByProductId(request.productId())
+                .orElseThrow(() -> new NotFoundException("Складская запись не найдена"));
+        int reserved = inventory.getReservedQuantity() == null ? 0 : inventory.getReservedQuantity();
+        if (request.quantity() > reserved) {
+            throw new InsufficientReservationException(
+                    "Нельзя снять резерв больше, чем зарезервировано: " + reserved);
+        }
+        inventory.setReservedQuantity(reserved - request.quantity());
+        Inventory saved = inventoryRepository.save(inventory);
+        int available = (saved.getQuantity() == null ? 0 : saved.getQuantity()) - (saved.getReservedQuantity() == null ? 0 : saved.getReservedQuantity());
+        return new ReserveResponse(true, available, "Резерв снят");
     }
 
     private InventoryDto toDto(Inventory inventory) {

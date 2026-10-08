@@ -2,6 +2,17 @@ server:
   port: 0
 
 spring:
+  cloud:
+    openfeign:
+      client:
+        config:
+          default:
+            connectTimeout: 3000
+            readTimeout: 5000
+          inventory-service:
+            connectTimeout: 2000
+            readTimeout: 10000
+            loggerLevel: BASIC
   datasource:
     url: jdbc:postgresql://localhost:5432/order_db
     username: dbuser
@@ -12,3 +23,7 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
+logging:
+  level:
+    ru.yandex.practicum.order.client.InventoryClient: DEBUG
