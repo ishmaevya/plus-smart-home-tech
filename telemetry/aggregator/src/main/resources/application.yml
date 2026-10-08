@@ -1,9 +1,5 @@
 spring:
-  kafka:
-    bootstrap-servers: localhost:9092
-
-aggregator:
-  kafka:
-    topic-in: telemetry.sensors.v1
-    topic-out: telemetry.snapshots.v1
-    group-id: telemetry.aggregator
+  application:
+    name: aggregator
+  config:
+    import: configserver:http://localhost:8888
