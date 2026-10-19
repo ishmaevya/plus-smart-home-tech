@@ -21,6 +21,7 @@ import ru.yandex.practicum.order.client.dto.InventoryResponse;
 import ru.yandex.practicum.order.client.dto.ProductResponse;
 import ru.yandex.practicum.order.dto.CreateOrderRequest;
 import ru.yandex.practicum.order.dto.OrderItemRequest;
+import ru.yandex.practicum.order.exception.InventoryServiceUnavailableException;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -180,6 +181,38 @@ class OrderServiceAcceptanceTest {
                 .as("Заказ с товаром, снятым с продажи, должен отклоняться с HTTP 422")
                 .isEqualTo(422);
         verify(inventoryClient, never()).reserve(any(InventoryRequest.class));
+    }
+
+    @Test
+    void shouldStoreUnconfirmedOrderWhenInventoryServiceIsUnavailable() throws Exception {
+        when(inventoryClient.reserve(any(InventoryRequest.class)))
+                .thenThrow(new InventoryServiceUnavailableException("склад недоступен"));
+
+        CreateOrderRequest request = new CreateOrderRequest(
+                "Acceptance Buyer",
+                "acceptance-degraded@example.com",
+                List.of(new OrderItemRequest(1L, 2))
+        );
+
+        MvcResult response = postJson("/api/orders", request);
+
+        assertThat(status(response))
+                .as("Техническая недоступность склада не должна превращаться в ошибку order-service")
+                .isEqualTo(201);
+        Map<String, Object> created = readMap(response);
+        assertThat(created.get("status"))
+                .as("Заказ с нерезервированным товаром должен требовать ручной проверки")
+                .isEqualTo("PENDING_CONFIRMATION");
+        assertThat(created.get("statusDetails"))
+                .as("Поле statusDetails должно объяснять причину неподтверждённого заказа")
+                .isInstanceOf(String.class)
+                .isNotEqualTo("");
+        assertThat((List<?>) created.get("items"))
+                .as("Заказ должен сохранить связь с выбранными товарами")
+                .hasSize(1)
+                .anySatisfy(item -> assertThat((Map<String, Object>) item)
+                        .as("Данные товара берутся из работающего product-service")
+                        .containsEntry("productName", "Acceptance Smart Lamp"));
     }
 
     private MvcResult postJson(String url, Object body) throws Exception {

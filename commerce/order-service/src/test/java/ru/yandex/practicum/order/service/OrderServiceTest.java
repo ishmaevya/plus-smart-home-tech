@@ -18,7 +18,9 @@ import ru.yandex.practicum.order.dto.OrderDto;
 import ru.yandex.practicum.order.dto.OrderItemDto;
 import ru.yandex.practicum.order.dto.OrderItemRequest;
 import ru.yandex.practicum.order.entity.Order;
+import ru.yandex.practicum.order.exception.InventoryServiceUnavailableException;
 import ru.yandex.practicum.order.exception.OrderProcessingException;
+import ru.yandex.practicum.order.exception.ProductServiceUnavailableException;
 import ru.yandex.practicum.order.mapper.OrderMapper;
 import ru.yandex.practicum.order.repository.OrderRepository;
 
@@ -156,6 +158,80 @@ class OrderServiceTest {
                 .isInstanceOf(OrderProcessingException.class);
 
         verify(inventoryClient, never()).release(any(InventoryRequest.class));
+        verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    @Test
+    void shouldSavePendingConfirmationOrderWhenCatalogIsUnavailable() {
+        when(productClient.getProduct(7L)).thenThrow(new ProductServiceUnavailableException("каталог недоступен"));
+        stubSave();
+
+        OrderDto result = orderService.create(orderRequest(new OrderItemRequest(7L, 2)));
+
+        assertThat(result.status()).isEqualTo("PENDING_CONFIRMATION");
+        assertThat(result.statusDetails()).isNotBlank();
+        assertThat(result.items()).hasSize(1);
+        assertThat(result.items().get(0).productName()).isEqualTo("Товар #7 (ожидает проверки)");
+        assertThat(result.items().get(0).price()).isEqualByComparingTo("0");
+        assertThat(result.totalPrice()).isEqualByComparingTo("0");
+        verify(inventoryClient).reserve(new InventoryRequest(7L, 2));
+    }
+
+    @Test
+    void shouldSavePendingConfirmationOrderWhenInventoryIsUnavailable() {
+        when(productClient.getProduct(1L))
+                .thenReturn(new ProductResponse(1L, "Лампа", new BigDecimal("100.00"), true));
+        when(inventoryClient.reserve(any(InventoryRequest.class)))
+                .thenThrow(new InventoryServiceUnavailableException("склад недоступен"));
+        stubSave();
+
+        OrderDto result = orderService.create(orderRequest(new OrderItemRequest(1L, 2)));
+
+        assertThat(result.status()).isEqualTo("PENDING_CONFIRMATION");
+        assertThat(result.statusDetails()).contains("склад");
+        assertThat(result.items().get(0).productName()).isEqualTo("Лампа");
+        assertThat(result.items().get(0).price()).isEqualByComparingTo("100.00");
+        assertThat(result.totalPrice()).isEqualByComparingTo("200.00");
+        verify(inventoryClient, never()).release(any(InventoryRequest.class));
+    }
+
+    @Test
+    void shouldMixCatalogSnapshotAndPlaceholderWhenOnlyOneProductIsUnavailable() {
+        when(productClient.getProduct(1L))
+                .thenReturn(new ProductResponse(1L, "Лампа", new BigDecimal("100.00"), true));
+        when(productClient.getProduct(2L))
+                .thenThrow(new ProductServiceUnavailableException("каталог недоступен"));
+        stubSave();
+
+        OrderDto result = orderService.create(orderRequest(
+                new OrderItemRequest(1L, 1),
+                new OrderItemRequest(2L, 2)
+        ));
+
+        assertThat(result.status()).isEqualTo("PENDING_CONFIRMATION");
+        assertThat(result.statusDetails()).isNotBlank();
+        assertThat(result.items())
+                .hasSize(2)
+                .anySatisfy(item -> assertThat(item)
+                        .extracting(OrderItemDto::productName, OrderItemDto::price)
+                        .containsExactly("Лампа", new BigDecimal("100.00")))
+                .anySatisfy(item -> assertThat(item)
+                        .extracting(OrderItemDto::productName, OrderItemDto::price)
+                        .containsExactly("Товар #2 (ожидает проверки)", BigDecimal.ZERO));
+        assertThat(result.totalPrice()).isEqualByComparingTo("100.00");
+        verify(inventoryClient).reserve(new InventoryRequest(1L, 1));
+        verify(inventoryClient).reserve(new InventoryRequest(2L, 2));
+    }
+
+    @Test
+    void shouldRejectOrderOnBusinessFailureEvenWhenCatalogIsUnavailable() {
+        when(productClient.getProduct(1L)).thenThrow(new ProductServiceUnavailableException("каталог недоступен"));
+        when(inventoryClient.reserve(any(InventoryRequest.class))).thenThrow(feignError(409));
+
+        assertThatThrownBy(() -> orderService.create(orderRequest(new OrderItemRequest(1L, 5))))
+                .isInstanceOf(OrderProcessingException.class)
+                .hasMessageContaining("недостаточно");
+
         verify(orderRepository, never()).save(any(Order.class));
     }
 

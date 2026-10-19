@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import ru.yandex.practicum.order.client.ClientFailures;
 import ru.yandex.practicum.order.client.InventoryClient;
 import ru.yandex.practicum.order.client.ProductClient;
 import ru.yandex.practicum.order.client.dto.InventoryRequest;
@@ -16,8 +17,10 @@ import ru.yandex.practicum.order.dto.OrderItemRequest;
 import ru.yandex.practicum.order.entity.Order;
 import ru.yandex.practicum.order.entity.OrderItem;
 import ru.yandex.practicum.order.entity.OrderStatus;
+import ru.yandex.practicum.order.exception.InventoryServiceUnavailableException;
 import ru.yandex.practicum.order.exception.NotFoundException;
 import ru.yandex.practicum.order.exception.OrderProcessingException;
+import ru.yandex.practicum.order.exception.ProductServiceUnavailableException;
 import ru.yandex.practicum.order.mapper.OrderMapper;
 import ru.yandex.practicum.order.repository.OrderRepository;
 
@@ -33,6 +36,11 @@ import java.util.stream.Collectors;
 public class OrderService {
 
     private static final Logger log = LoggerFactory.getLogger(OrderService.class);
+
+    private static final String CATALOG_DEGRADATION_REASON =
+            "не удалось получить данные каталога, товары ожидают проверки";
+    private static final String INVENTORY_DEGRADATION_REASON =
+            "не удалось подтвердить резерв на складе";
 
     private final OrderRepository orderRepository;
     private final OrderMapper orderMapper;
@@ -65,22 +73,35 @@ public class OrderService {
      * в inventory-service. Вызовы Feign выполняются вне транзакции БД, поэтому
      * транзакция на методе не открывается — save() заводит собственную короткую
      * транзакцию только на запись заказа.
+     *
+     * <p>Сценарий различает три результата обращения к соседним сервисам:
+     * <ul>
+     *     <li>успех — заказ сохраняется как {@code CONFIRMED};</li>
+     *     <li>бизнес-отказ (товар не найден, снят с продажи, склад ответил отказом) —
+     *     заказ не создаётся, уже поставленные резервы снимаются;</li>
+     *     <li>техническая деградация (5xx, таймаут, недоступность, открытая цепь
+     *     Circuit Breaker) — заказ сохраняется как {@code PENDING_CONFIRMATION}
+     *     с пояснением в {@code statusDetails}, поставленные резервы остаются.</li>
+     * </ul>
      */
     public OrderDto create(CreateOrderRequest request) {
         Map<Long, Integer> quantityByProductId = groupQuantities(request.items());
 
+        Map<Long, ProductResponse> products = new LinkedHashMap<>();
+        boolean catalogDegraded = fetchCatalog(quantityByProductId.keySet(), products);
+
         List<Reservation> reservations = new ArrayList<>();
+        boolean inventoryDegraded;
         try {
-            Map<Long, ProductResponse> products = fetchProducts(quantityByProductId.keySet());
+            inventoryDegraded = reserveStock(quantityByProductId, reservations);
+        } catch (RuntimeException e) {
+            releaseReservations(reservations);
+            throw e;
+        }
 
-            for (Map.Entry<Long, Integer> entry : quantityByProductId.entrySet()) {
-                reserveStock(entry.getKey(), entry.getValue());
-                reservations.add(new Reservation(entry.getKey(), entry.getValue()));
-            }
-
-            Order order = buildOrder(request, quantityByProductId, products);
-            Order saved = orderRepository.save(order);
-            return orderMapper.toDto(saved);
+        Order order = buildOrder(request, quantityByProductId, products, catalogDegraded, inventoryDegraded);
+        try {
+            return orderMapper.toDto(orderRepository.save(order));
         } catch (RuntimeException e) {
             releaseReservations(reservations);
             throw e;
@@ -95,51 +116,97 @@ public class OrderService {
         return quantityByProductId;
     }
 
-    private Map<Long, ProductResponse> fetchProducts(Iterable<Long> productIds) {
-        Map<Long, ProductResponse> products = new LinkedHashMap<>();
+    /**
+     * Забирает данные каталога по всем товарам заказа. Бизнес-отказ каталога
+     * прерывает создание заказа, техническая недоступность возвращает признак
+     * деградации, а сам заказ можно продолжить собирать по productId.
+     */
+    private boolean fetchCatalog(Iterable<Long> productIds, Map<Long, ProductResponse> products) {
+        boolean catalogDegraded = false;
         for (Long productId : productIds) {
-            ProductResponse product = fetchProduct(productId);
-            if (!Boolean.TRUE.equals(product.active())) {
-                throw new OrderProcessingException("Товар снят с продажи: " + product.name());
+            try {
+                ProductResponse product = fetchProduct(productId);
+                if (!Boolean.TRUE.equals(product.active())) {
+                    throw new OrderProcessingException("Товар снят с продажи: " + product.name());
+                }
+                products.put(productId, product);
+            } catch (ProductServiceUnavailableException e) {
+                log.warn("product-service недоступен при получении товара {}: {}", productId, e.getMessage());
+                catalogDegraded = true;
             }
-            products.put(productId, product);
         }
-        return products;
+        return catalogDegraded;
     }
 
     private ProductResponse fetchProduct(Long productId) {
         ProductResponse product;
         try {
             product = productClient.getProduct(productId);
+        } catch (ProductServiceUnavailableException e) {
+            throw e;
         } catch (FeignException.NotFound e) {
             throw new OrderProcessingException("Товар не найден: " + productId);
-        } catch (FeignException e) {
-            log.error("product-service не ответил на запрос товара {}", productId, e);
-            throw new OrderProcessingException("Не удалось получить данные товара: " + productId);
         } catch (RuntimeException e) {
-            log.error("Не удалось получить товар {} из product-service", productId, e);
-            throw new OrderProcessingException("Не удалось получить данные товара: " + productId);
+            throw catalogFailure(productId, e);
         }
         if (product == null) {
-            throw new OrderProcessingException("Не удалось получить данные товара: " + productId);
+            throw new ProductServiceUnavailableException(
+                    "product-service вернул пустой ответ на запрос товара " + productId);
         }
         return product;
+    }
+
+    private RuntimeException catalogFailure(Long productId, RuntimeException cause) {
+        if (ClientFailures.businessResponse(cause) != null) {
+            log.warn("product-service отклонил запрос товара {}: {}", productId, cause.getMessage());
+            return new OrderProcessingException("Не удалось получить данные товара: " + productId);
+        }
+        log.error("product-service недоступен при получении товара {}", productId, cause);
+        return new ProductServiceUnavailableException(
+                "product-service недоступен при получении товара " + productId, cause);
+    }
+
+    /**
+     * Резервирует остатки по товарам заказа. Возвращает признак технической
+     * недоступности склада: в этом случае уже поставленные резервы не снимаются,
+     * а заказ переводится в {@code PENDING_CONFIRMATION}.
+     */
+    private boolean reserveStock(Map<Long, Integer> quantityByProductId, List<Reservation> reservations) {
+        for (Map.Entry<Long, Integer> entry : quantityByProductId.entrySet()) {
+            try {
+                reserveStock(entry.getKey(), entry.getValue());
+            } catch (InventoryServiceUnavailableException e) {
+                log.warn("inventory-service недоступен при резервировании товара {}: {}",
+                        entry.getKey(), e.getMessage());
+                return true;
+            }
+            reservations.add(new Reservation(entry.getKey(), entry.getValue()));
+        }
+        return false;
     }
 
     private void reserveStock(Long productId, Integer quantity) {
         try {
             inventoryClient.reserve(new InventoryRequest(productId, quantity));
+        } catch (InventoryServiceUnavailableException e) {
+            throw e;
         } catch (FeignException.NotFound e) {
             throw new OrderProcessingException("Складская запись не найдена: товар " + productId);
         } catch (FeignException.Conflict e) {
             throw new OrderProcessingException("Товара недостаточно на складе: " + productId);
-        } catch (FeignException e) {
-            log.error("inventory-service не зарезервировал товар {} в количестве {}", productId, quantity, e);
-            throw new OrderProcessingException("Не удалось зарезервировать товар: " + productId);
         } catch (RuntimeException e) {
-            log.error("Не удалось зарезервировать товар {} в количестве {}", productId, quantity, e);
-            throw new OrderProcessingException("Не удалось зарезервировать товар: " + productId);
+            throw inventoryFailure(productId, e);
         }
+    }
+
+    private RuntimeException inventoryFailure(Long productId, RuntimeException cause) {
+        if (ClientFailures.businessResponse(cause) != null) {
+            log.warn("inventory-service отклонил резервирование товара {}: {}", productId, cause.getMessage());
+            return new OrderProcessingException("Не удалось зарезервировать товар: " + productId);
+        }
+        log.error("inventory-service недоступен при резервировании товара {}", productId, cause);
+        return new InventoryServiceUnavailableException(
+                "inventory-service недоступен при резервировании товара " + productId, cause);
     }
 
     private void releaseReservations(List<Reservation> reservations) {
@@ -156,19 +223,39 @@ public class OrderService {
     }
 
     private Order buildOrder(CreateOrderRequest request, Map<Long, Integer> quantityByProductId,
-                             Map<Long, ProductResponse> products) {
+                             Map<Long, ProductResponse> products, boolean catalogDegraded,
+                             boolean inventoryDegraded) {
         Order order = new Order();
         order.setCustomerName(request.customerName());
         order.setCustomerEmail(request.customerEmail());
-        order.setStatus(OrderStatus.CONFIRMED);
+
+        List<String> degradationReasons = new ArrayList<>();
+        if (catalogDegraded) {
+            degradationReasons.add(CATALOG_DEGRADATION_REASON);
+        }
+        if (inventoryDegraded) {
+            degradationReasons.add(INVENTORY_DEGRADATION_REASON);
+        }
+
+        if (degradationReasons.isEmpty()) {
+            order.setStatus(OrderStatus.CONFIRMED);
+        } else {
+            order.setStatus(OrderStatus.PENDING_CONFIRMATION);
+            order.setStatusDetails("Заказ требует ручной проверки: " + String.join("; ", degradationReasons));
+        }
 
         List<OrderItem> items = new ArrayList<>();
         BigDecimal totalPrice = BigDecimal.ZERO;
         for (Map.Entry<Long, Integer> entry : quantityByProductId.entrySet()) {
-            ProductResponse product = products.get(entry.getKey());
-            items.add(orderMapper.toOrderItem(
-                    product.id(), product.name(), entry.getValue(), product.price(), order));
-            totalPrice = totalPrice.add(product.price().multiply(BigDecimal.valueOf(entry.getValue())));
+            Long productId = entry.getKey();
+            Integer quantity = entry.getValue();
+            ProductResponse product = products.get(productId);
+            String productName = product == null
+                    ? "Товар #" + productId + " (ожидает проверки)"
+                    : product.name();
+            BigDecimal price = product == null ? BigDecimal.ZERO : product.price();
+            items.add(orderMapper.toOrderItem(productId, productName, quantity, price, order));
+            totalPrice = totalPrice.add(price.multiply(BigDecimal.valueOf(quantity)));
         }
         order.setItems(items);
         order.setTotalPrice(totalPrice);
