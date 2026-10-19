@@ -1,0 +1,122 @@
+server:
+  port: 8080
+
+spring:
+  cloud:
+    loadbalancer:
+      cache:
+        ttl: 5s
+    gateway:
+      discovery:
+        locator:
+          enabled: false
+      httpclient:
+        connect-timeout: 2000
+        response-timeout: 5s
+      routes:
+        - id: product-service-read
+          uri: lb://product-service
+          order: 1
+          predicates:
+            - Path=/api/products/**,/api/categories/**
+            - Method=GET
+          filters:
+            - name: Retry
+              args:
+                retries: 2
+                series:
+                  - SERVER_ERROR
+                statuses:
+                  - BAD_GATEWAY
+                  - SERVICE_UNAVAILABLE
+                  - GATEWAY_TIMEOUT
+                methods:
+                  - GET
+                backoff:
+                  firstBackoff: 100ms
+                  maxBackoff: 500ms
+                  factor: 2
+                  basedOnPreviousValue: false
+        - id: product-service-write
+          uri: lb://product-service
+          order: 10
+          predicates:
+            - Path=/api/products/**,/api/categories/**
+        - id: inventory-service-read
+          uri: lb://inventory-service
+          order: 1
+          predicates:
+            - Path=/api/inventory/**
+            - Method=GET
+          filters:
+            - name: Retry
+              args:
+                retries: 2
+                series:
+                  - SERVER_ERROR
+                statuses:
+                  - BAD_GATEWAY
+                  - SERVICE_UNAVAILABLE
+                  - GATEWAY_TIMEOUT
+                methods:
+                  - GET
+                backoff:
+                  firstBackoff: 100ms
+                  maxBackoff: 500ms
+                  factor: 2
+                  basedOnPreviousValue: false
+        - id: inventory-service-write
+          uri: lb://inventory-service
+          order: 10
+          predicates:
+            - Path=/api/inventory/**
+        - id: order-service-read
+          uri: lb://order-service
+          order: 1
+          predicates:
+            - Path=/api/orders/**
+            - Method=GET
+          filters:
+            - name: Retry
+              args:
+                retries: 2
+                series:
+                  - SERVER_ERROR
+                statuses:
+                  - BAD_GATEWAY
+                  - SERVICE_UNAVAILABLE
+                  - GATEWAY_TIMEOUT
+                methods:
+                  - GET
+                backoff:
+                  firstBackoff: 100ms
+                  maxBackoff: 500ms
+                  factor: 2
+                  basedOnPreviousValue: false
+        - id: order-service-write
+          uri: lb://order-service
+          order: 10
+          predicates:
+            - Path=/api/orders/**
+      globalcors:
+        add-to-simple-url-handler-mapping: true
+        cors-configurations:
+          '[/**]':
+            allowedOrigins:
+              - http://localhost:3000
+              - http://localhost:5173
+              - http://localhost:8443
+              - https://localhost:8443
+            allowedMethods: "*"
+            allowedHeaders: "*"
+            allowCredentials: true
+            maxAge: 3600
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
+  endpoint:
+    gateway:
+      enabled: true
