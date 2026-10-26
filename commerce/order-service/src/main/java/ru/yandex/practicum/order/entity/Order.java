@@ -27,7 +27,7 @@ public class Order {
     private String customerEmail;
 
     @Enumerated(EnumType.STRING)
-    private OrderStatus status = OrderStatus.CREATED;
+    private OrderStatus status = OrderStatus.CONFIRMED;
 
     private BigDecimal totalPrice;
 

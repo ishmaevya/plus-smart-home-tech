@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    config:
+      enabled: false
+      fail-fast: false
+    gateway:
+      discovery:
+        locator:
+          enabled: false
+      routes: []
+
+app:
+  security:
+    users:
+      - username: ivan
+        password: ivan
+        roles: USER
+      - username: anna
+        password: anna
+        roles: USER,ADMIN
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

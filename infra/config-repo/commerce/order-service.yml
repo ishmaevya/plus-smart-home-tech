@@ -2,6 +2,19 @@ server:
   port: 0
 
 spring:
+  cloud:
+    openfeign:
+      circuitbreaker:
+        enabled: true
+      client:
+        config:
+          default:
+            connectTimeout: 3000
+            readTimeout: 5000
+          inventory-service:
+            connectTimeout: 2000
+            readTimeout: 10000
+            loggerLevel: BASIC
   datasource:
     url: jdbc:postgresql://localhost:5432/order_db
     username: dbuser
@@ -12,3 +25,20 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+  timelimiter:
+    configs:
+      default:
+        timeout-duration: 3s
+
+logging:
+  level:
+    ru.yandex.practicum.order.client.InventoryClient: DEBUG

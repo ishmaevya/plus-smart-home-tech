@@ -3,10 +3,10 @@ package ru.yandex.practicum.order.mapper;
 import org.springframework.stereotype.Component;
 import ru.yandex.practicum.order.dto.OrderDto;
 import ru.yandex.practicum.order.dto.OrderItemDto;
-import ru.yandex.practicum.order.dto.OrderItemRequest;
 import ru.yandex.practicum.order.entity.Order;
 import ru.yandex.practicum.order.entity.OrderItem;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -39,13 +39,14 @@ public class OrderMapper {
         );
     }
 
-    public OrderItem toOrderItem(OrderItemRequest request, Order order) {
+    public OrderItem toOrderItem(Long productId, String productName, Integer quantity,
+                                 BigDecimal price, Order order) {
         OrderItem item = new OrderItem();
         item.setOrder(order);
-        item.setProductId(request.productId());
-        item.setProductName(request.productName());
-        item.setQuantity(request.quantity());
-        item.setPrice(request.price());
+        item.setProductId(productId);
+        item.setProductName(productName);
+        item.setQuantity(quantity);
+        item.setPrice(price);
         return item;
     }
 }
